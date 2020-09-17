@@ -330,6 +330,13 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 void win_process_image_flags(session_t *ps, struct managed_win *w) {
 	assert(!win_check_flags_all(w, WIN_FLAGS_MAPPED));
 
+	// Check for changes to the client window. Has to be done before updating stale
+	// images since the (removed) client might affect those flags.
+	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
+		win_recheck_client(ps, w);
+		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
+	}
+
 	// Not a loop
 	while (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE) &&
 	       !win_check_flags_all(w, WIN_FLAGS_IMAGE_ERROR)) {
@@ -373,11 +380,6 @@ void win_process_image_flags(session_t *ps, struct managed_win *w) {
 	// Clear stale image flags
 	if (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE)) {
 		win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
-	}
-
-	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
-		win_recheck_client(ps, w);
-		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
 	}
 }
 
