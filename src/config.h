@@ -15,6 +15,8 @@
 #include <xcb/xcb.h>
 #include <xcb/xfixes.h>
 
+#include "uthash_extra.h"
+
 #ifdef CONFIG_LIBCONFIG
 #include <libconfig.h>
 #endif
@@ -64,6 +66,30 @@ enum blur_method {
 	BLUR_METHOD_GAUSSIAN,
 	BLUR_METHOD_DUAL_KAWASE,
 	BLUR_METHOD_INVALID,
+};
+
+// TODO(tryone144): Find a better place for this
+enum custom_shader_id {
+	CUSTOM_SHADER_DEFAULT,
+	CUSTOM_SHADER_CUSTOM_START,
+};
+enum custom_shader_type {
+	CUSTOM_SHADER_TYPE_DEFAULT,
+	CUSTOM_SHADER_TYPE_INLINE,
+	CUSTOM_SHADER_TYPE_FILE,
+};
+struct custom_shader {
+	UT_hash_handle hh;
+	uint32_t id;
+	enum custom_shader_type type;
+	char source[];
+};
+
+static const struct custom_shader custom_shader_default = {
+    .hh = {0},
+    .id = CUSTOM_SHADER_DEFAULT,
+    .type = CUSTOM_SHADER_TYPE_DEFAULT,
+    .source = {'\0'},
 };
 
 typedef struct _c2_lptr c2_lptr_t;
@@ -206,6 +232,12 @@ typedef struct options {
 	struct conv **blur_kerns;
 	/// Number of convolution kernels
 	int blur_kernel_count;
+	/// Hash table of custom fragment shaders
+	struct custom_shader *custom_shaders;
+	/// Custom fragment shader for painting windows
+	const struct custom_shader *window_shader_fg;
+	/// Rules to change custom fragment shader for painting windows.
+	c2_lptr_t *window_shader_fg_rules;
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
 	double inactive_dim;
 	/// Whether to use fixed inactive dim opacity, instead of deciding
@@ -251,6 +283,9 @@ bool must_use parse_int(const char *, int *);
 struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *count);
 bool must_use parse_geometry(session_t *, const char *, region_t *);
 bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
+const struct custom_shader *must_use parse_custom_shader(const char *,
+                                                         struct custom_shader **);
+bool must_use parse_rule_window_shader(c2_lptr_t **, struct custom_shader **, const char *);
 enum blur_method must_use parse_blur_method(const char *src);
 
 /**

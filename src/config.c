@@ -439,6 +439,145 @@ bool parse_rule_opacity(c2_lptr_t **res, const char *src) {
 }
 
 /**
+ * Parse a window shader preset, load from file or copy source.
+ */
+const struct custom_shader *
+parse_custom_shader(const char *src, struct custom_shader **shaders) {
+	if (!shaders || !src)
+		return NULL;
+
+	// Skip over spaces
+	const char *startptr = src;
+	while (*startptr && isspace(*startptr))
+		++startptr;
+	const char *endptr = startptr;
+
+	// Check if shader is default preset
+	bool is_default = false;
+	if (mstrncmp("default", startptr) == 0) {
+		// Skip over first word
+		endptr += strlen("default");
+		// Skip over trailing spaces
+		while (*endptr && isspace(*endptr))
+			++endptr;
+		is_default = !*endptr;
+	}
+
+	if (is_default)
+		return &custom_shader_default;
+
+	struct custom_shader *shader = NULL;
+
+	// Check if shader is inline source
+	if (*startptr == '\'') {
+		// Find terminating single quote
+		while (endptr && (endptr == startptr || *(endptr - 1) == '\\'))
+			endptr = strchr(endptr + 1, '\'');
+		if (!endptr) {
+			log_error(
+			    "Cannot find terminating \' for inline shader source: %s", src);
+			return NULL;
+		}
+
+		// Create new shader
+		startptr += 1;
+		auto source_len = (size_t)(endptr - startptr) + 1;
+		auto shader_len = sizeof(struct custom_shader) + source_len;
+		shader = (struct custom_shader *)ccalloc(shader_len, char);
+		shader->id = CUSTOM_SHADER_CUSTOM_START;
+		shader->type = CUSTOM_SHADER_TYPE_INLINE;
+		mstrncpy(shader->source, startptr, source_len);
+
+		// Skip over trailing spaces
+		endptr += 1;
+		while (*endptr && isspace(*endptr))
+			++endptr;
+		if (*endptr)
+			log_warn("Trailing characters after inline shader source: %s", src);
+	} else {
+		// TODO(tryone144): Do tilde expansion
+		// TODO(tryone144): Search for file in common config locations
+
+		// Just check if the requested file exists. We don't want to keep
+		// the contents in memory. Leave loading the file to the backend
+		// when initializing the shader.
+		// TODO(tryone144): Not sure if this is the best approach...
+		FILE *f = fopen(src, "r");
+		if (!f) {
+			log_error("Cannot open custom shader file: '%s'", src);
+			return NULL;
+		}
+		fclose(f);
+
+		// Create new shader
+		auto source_len = strlen(src) + 1;
+		auto shader_len = sizeof(struct custom_shader) + source_len;
+		shader = (struct custom_shader *)ccalloc(shader_len, char);
+		shader->id = CUSTOM_SHADER_CUSTOM_START;
+		shader->type = CUSTOM_SHADER_TYPE_FILE;
+		mstrncpy(shader->source, src, source_len);
+	}
+
+	if (shader) {
+		// Check if shader has already been loaded. If so, return the cached
+		// instance.
+		struct custom_shader *old_shader, *tmp;
+		HASH_FIND_STR(*shaders, shader->source, old_shader);
+
+		if (old_shader) {
+			free(shader);
+			return old_shader;
+		}
+
+		// Otherwise add newly created shader with unique id.
+		if (shader->id == CUSTOM_SHADER_CUSTOM_START) {
+			auto next_id = shader->id;
+			HASH_ITER(hh, *shaders, old_shader, tmp) {
+				if (old_shader->id >= next_id) {
+					next_id = old_shader->id + 1;
+				}
+			}
+			shader->id = next_id;
+		}
+
+		HASH_ADD_STR(*shaders, source, shader);
+	}
+
+	return shader;
+}
+
+/**
+ * Parse a list of window shader rules.
+ */
+bool parse_rule_window_shader(c2_lptr_t **res, struct custom_shader **shaders, const char *src) {
+	if (!shaders || !src) {
+		return false;
+	}
+
+	// Find custom shader terminator
+	const char *endptr = strchr(src, ':');
+	if (!endptr) {
+		log_error("Custom shader terminator not found: %s", src);
+		return false;
+	}
+
+	// Parse and create custom shader
+	auto source_len = (size_t)(endptr - src) + 1;
+	auto shader_source = (char *)ccalloc(source_len, char);
+	mstrncpy(shader_source, src, source_len);
+
+	auto shader = parse_custom_shader(shader_source, shaders);
+	free(shader_source);
+	if (!shader) {
+		log_error("Invalid custom shader specified: %s", src);
+		return false;
+	}
+
+	// Parse pattern
+	return c2_parse(res, ++endptr, (void *)shader);
+}
+
+/**
  * Add a pattern to a condition linked list.
  */
 bool condlst_add(c2_lptr_t **pcondlst, const char *pattern) {
@@ -559,6 +698,9 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .blur_background_blacklist = NULL,
 	    .blur_kerns = NULL,
 	    .blur_kernel_count = 0,
+	    .custom_shaders = NULL,
+	    .window_shader_fg = NULL,
+	    .window_shader_fg_rules = NULL,
 	    .inactive_dim = 0.0,
 	    .inactive_dim_fixed = false,
 	    .invert_color_list = NULL,

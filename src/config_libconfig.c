@@ -250,6 +250,32 @@ parse_cfg_condlst_opct(options_t *opt, const config_t *pcfg, const char *name) {
 	}
 }
 
+/**
+ * Parse a window shader rule list in configuration file.
+ */
+static inline void
+parse_cfg_condlst_shader(options_t *opt, const config_t *pcfg, const char *name) {
+	config_setting_t *setting = config_lookup(pcfg, name);
+	if (setting) {
+		// Parse an array of options
+		if (config_setting_is_array(setting)) {
+			int i = config_setting_length(setting);
+			while (i--)
+				if (!parse_rule_window_shader(
+				        &opt->window_shader_fg_rules, &opt->custom_shaders,
+				        config_setting_get_string_elem(setting, i)))
+					exit(1);
+		}
+		// Treat it as a single pattern if it's a string
+		else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
+			if (!parse_rule_window_shader(&opt->window_shader_fg_rules,
+			                              &opt->custom_shaders,
+			                              config_setting_get_string(setting)))
+				exit(1);
+		}
+	}
+}
+
 static inline void parse_wintype_config(const config_t *cfg, const char *member_name,
                                         win_option_t *o, win_option_mask_t *mask) {
 	char *str = mstrjoin("wintypes.", member_name);
@@ -588,6 +614,18 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		         "1.0");
 		opt->max_brightness = 1.0;
 	}
+
+	// --window-shader-fg
+	if (config_lookup_string(&cfg, "window-shader-fg", &sval)) {
+		auto shader = parse_custom_shader(sval, &opt->custom_shaders);
+		if (!shader) {
+			log_fatal("Cannot parse \"window-shader-fg\"");
+			goto err;
+		}
+		opt->window_shader_fg = shader;
+	}
+	// --window-shader-fg-rule
+	parse_cfg_condlst_shader(opt, &cfg, "window-shader-fg-rule");
 
 	// --glx-use-gpushader4
 	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival) && ival) {

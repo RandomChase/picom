@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
+#include <assert.h>
 #include <ctype.h>
 #include <stddef.h>
 
@@ -32,6 +33,15 @@ static inline int uitostr(unsigned int n, char *buf) {
 		n /= 10;
 	}
 	return ret;
+}
+
+static inline char *mstrncpy(char *dest, const char *src, size_t n) {
+	assert(n > 0);
+	char *retval = strncpy(dest, src, n - 1);
+	if (retval) {
+		retval[n - 1] = '\0';
+	}
+	return retval;
 }
 
 static inline const char *skip_space_const(const char *src) {
